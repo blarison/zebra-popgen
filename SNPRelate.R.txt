@@ -1,0 +1,60 @@
+#Start R and Load Libraries
+R 
+##Install
+##if (!requireNamespace("BiocManager", quietly = TRUE))
+##    install.packages("BiocManager")
+##BiocManager::install(c("gdsfmt","SNPRelate"))
+
+library(gdsfmt)
+library(SNPRelate)
+library(dplyr)
+library(ggplot2)
+library(RColorBrewer)
+#Convert bed file to GDS
+setwd("/Volumes/NGSAnalysis/RAD/Plink")
+snpgdsBED2GDS('wild.auto.pw.rm.po.2fs.bed', 'wild.auto.pw.rm.po.2fs.fam', 'wild.auto.pw.rm.po.2fs.bim', '../SNPrelate/wild.auto.pw.rm.po.2fs.GDS', family=FALSE, snpfirstdim=NA, compress.annotation="ZIP_RA.max", compress.geno="", option=NULL, cvt.chr=c("int", "char"), cvt.snpid=c("auto", "int"), verbose=TRUE)
+#Convert GDS to SNP dataset
+setwd('../SNPrelate')
+snpgdsCreateGenoSet('wild.auto.pw.rm.po.2fs.GDS', 'wild.auto.pw.rm.po.2fs.geno', sample.id=NULL, snp.id=NULL, snpfirstdim=NULL, compress.annotation="ZIP_RA.max", compress.geno="", verbose=TRUE)
+#See what is in the file:
+snpgdsSummary('wild.auto.pw.rm.po.2fs.GDS')
+#Open a connection to the file
+Plains_gds <- snpgdsOpen("wild.auto.pw.rm.po.2fs.GDS")
+#Compute Principle Components
+pca <- snpgdsPCA(Plains_gds, autosome.only = FALSE)
+names(pca)
+#Get Eigenvalues and Proportion Variance Explained
+pca$eigenval
+pca$varprop
+pcascores <- cbind(pca$sample.id, pca$eigenvect)
+write.table(pcascores,"wild.auto.pw.rm.po.2fs.pcascores.txt", sep="\t", row.names=F, col.names=F, quote=F)
+#Turn PCA Results into a dataframe
+tab1 <- data.frame(sample.id = pca$sample.id,
+                   EV1 = pca$eigenvect[,1],    # the first eigenvector
+                   EV2 = pca$eigenvect[,2],    # the second eigenvector
+                   stringsAsFactors = FALSE) %>%
+  tbl_df()
+#PLOT the PCA
+#Match PCA data with the populations
+pops <- read.table('/Volumes/NGSAnalysis/PlainsIndvLocationsGPS.txt', header=T,stringsAsFactors = FALSE, sep = "\t") %>% 
+  tbl_df() %>% select(SampleID, Region, Location) %>% rename(sample.id = SampleID)
+#Join the Eigevectors with the State and group information using the sample.id column
+tab2 <- left_join(tab1, pops) %>%
+  mutate(state_shape = as.character(as.integer(factor(Region)) %% 6))
+#Plot using ggplot
+setEPS()
+postscript('wild.auto.pw.rm.po.2fs.pca.eps')
+ggplot(tab2, aes(x = EV1, y = EV2, fill = Location)) +
+  geom_point(shape=21, size = 5, stroke=1) +
+  theme(panel.grid.major = element_blank(), panel.grid.minor = element_blank()) +
+  scale_fill_manual(values = c("red2","orange","greenyellow","green2","cyan1","cadetblue2","blue2","purple2","pink")) + 
+  theme(legend.text=element_text(size=10)) +
+  theme(panel.grid.major = element_blank(), panel.grid.minor = element_blank(), panel.background = element_blank(), axis.line = element_line(colour = "black")) +
+  theme(axis.text=element_text(size=20, color="black"), axis.title=element_text(size=24,color="black",face="bold")) +
+  theme(legend.text=element_text(size=20)) + 
+  theme(legend.title = element_blank()) +
+  theme(legend.key = element_rect(colour = "transparent", fill = "white")) +
+  theme(legend.justification = "top") +
+  labs(x = paste("EV1 (",round(pca$varprop[1]*100,2),"%)",sep=""), y = paste("EV2 (",round(pca$varprop[2]*100,2),"%)",sep=""))
+dev.off()
+

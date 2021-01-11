@@ -1,0 +1,411 @@
+Hi Ren (and Greg), 
+
+The VCFs containing all sites within 300bp of SbfI sites (EquCab2) are located at:
+
+/gpfs/gpfs1/home/ckaelin/zebra/vcfs_allsites
+
+To speed up variant calling, I split the samples based on population: 
+
+Caprivi, Hluhluwe, Kidepo (21 samples)
+Kruger (20 samples)
+Mburo (21 samples)
+Mahango (14 samples)
+Lakipo (15 samples)
+Luang (14 samples)
+Etosha (26 samples)
+
+Chris 
+
+
+Dear Ren,
+
+Yes! I think calculated similar to Annabel. But just in case what I did is on my filtered vcf I calculated the following: 
+
+(#heterozygotes_sites 1/0) ÷ ( #homozygoes_alternative 1/1 + #heterozygotes 1/0 + homozygoes reference 0/0)
+
+This is per site, meaning that you get the total number of heterozygotes sites, homozygoes alternative, etc. Hope this helps but I am pretty should Annbel will be able to explain it better.
+
+Good luck,
+
+Daniel
+
+####################################################################################################
+####################################################################################################
+####################################################################################################
+
+STEPS
+
+1) produce .flt1 for each file provided by Chris
+* remove any snp not PASSED 
+* remove any snp not called for 50% of individuals
+* keep only autosomes
+* remove very extreme hwe (< 0.0001) in any population 
+
+2)  produce individual file for each pop & .all (combined) 
+* split caprivi into caprivi, hluhluwe and kidepo
+* combine populations - add columns
+
+3)  
+*output individual missingness
+
+produce flt2 for each site & .all.flt2 for sites combined
+* remove individuals not genotyped at 90% of sites
+* remove extreme depths < 8 > 75
+* keep only wild individuals * files already only contain wild
+* eliminate multiallelic
+
+4) Calculate heterozygosities
+Create 012 files with python (VCFto012.py)
+Get heterozygosity and heterozygosity ratio with R (count.genos.from012.R)
+
+
+#NOTE
+Run scripts using submit.sh:
+#!/bin/bash
+
+for pop in ecaprivi etosha hluhluwe kidepo kruger lakipo luang mahango mburo; do
+        export pop
+        scripts/tmp.sh
+done
+
+
+
+
+####################################################################################################
+STEP 1
+Filtering script (use tmp.sh):
+
+#!/bin/bash
+#BSUB -q c7normal
+#BSUB -o /gpfs/gpfs1/home/blarison/scripts/out/tmp.out
+#BSUB -R rusage[mem=32000]
+#BSUB -n 1
+#BSUB -R span[hosts=1]
+#BSUB -W 60:00
+
+vcftools --gzvcf RAD/vcfs/all_sites/pl_$pop.vcf.gz --max-missing 0.5 --remove-filtered-all --chr 1 --chr 2 --chr 3 --chr 4 --chr 5 --chr 6 --chr 7 --chr 8 --chr 9 --chr 10 --chr 11 --chr 12 --chr 13 --chr 14 --chr 15 --chr 16 --chr 17 --chr 18 --chr 19 --chr 20 --chr 21 --chr 22 --chr 23 --chr 24 --chr 25 --chr 26 --chr 27 --chr 28 --chr 29 --chr 30 --chr 31 --hwe 0.0001 --out RAD/vcfs/all_sites/$pop.flt1 --recode
+
+Job <1066758> is submitted to default queue <c7normal>.
+
+
+####################################################################################################
+STEP 2 - SPLIT
+
+#sed SbfI from names in caprivi file
+
+sed 's/SbfI_//g' RAD/vcfs/all_sites/caprivi.flt1.recode.vcf > RAD/vcfs/all_sites/caprivi.flt1.sed.recode.vcf
+
+#using tmp2.sh run:
+vcftools --vcf RAD/vcfs/all_sites/caprivi.flt1.sed.recode.vcf --keep RAD/vcfs/filters/plains.ECaprivi.indv.txt --out RAD/vcfs/all_sites/ecaprivi.flt1 --recode
+
+Job <1074246> is submitted to queue <c7normal>.
+awk '/1074246/ { show=1 } show; /Sender: LSF System/ { show=0 }' scripts/out/tmp.out
+
+
+vcftools --vcf RAD/vcfs/all_sites/caprivi.flt1.sed.recode.vcf --keep RAD/vcfs/filters/plains.Hluhluwe.indv.txt --out RAD/vcfs/all_sites/hluhluwe.flt1 --recode
+
+Job <1074247> is submitted to queue <c7normal>.
+awk '/1074247/ { show=1 } show; /Sender: LSF System/ { show=0 }' scripts/out/tmp.out
+
+vcftools --vcf RAD/vcfs/all_sites/caprivi.flt1.sed.recode.vcf --keep RAD/vcfs/filters/plains.Kidepo.indv.txt --out RAD/vcfs/all_sites/kidepo.flt1 --recode
+
+Job <1074248> is submitted to queue <c7normal>.
+awk '/1074248/ { show=1 } show; /Sender: LSF System/ { show=0 }' scripts/out/tmp.out
+
+
+STEP 2 - COMBINE
+
+Comparing two files
+Using VCFtools, two VCF files can be compared to determine which sites and individuals are shared between them. The first file is declared using the input file options just like any other output function. The second file must be specified using --diff, --gzdiff, or --diff-bcf. There are also advanced options to determine additional discordance between the two files.
+
+./vcftools --vcf input_data.vcf --diff other_data.vcf --out compare
+
+####################################################################################################
+STEP 3
+
+# output individual depths and make list of with poor coverage (use tmp.sh and run using submit.sh)
+
+
+#!/bin/bash
+#BSUB -q c7normal
+#BSUB -o /gpfs/gpfs1/home/blarison/scripts/out/tmp.out
+#BSUB -R rusage[mem=32000]
+#BSUB -n 1
+#BSUB -R span[hosts=1]
+#BSUB -W 60:00
+
+for pop in ecaprivi etosha hluhluwe kidepo kruger lakipo luang mahango mburo; do
+
+vcftools --vcf RAD/vcfs/all_sites/$pop.flt1.recode.vcf --out RAD/vcfs/all_sites/$pop.flt1 --missing-indv
+
+awk '$5 > 0.1 { print }' RAD/vcfs/all_sites/$pop.flt1.imiss > RAD/vcfs/all_sites/$pop.flt1.rm.missing
+
+vcftools --vcf RAD/vcfs/all_sites/$pop.flt1.recode.vcf --remove RAD/vcfs/all_sites/$pop.flt1.rm.missing --min-meanDP 8 --max-meanDP 74 --max-alleles 2 --out RAD/vcfs/all_sites/$pop.flt2 --recode
+
+
+bsub < scripts/submit.sh
+Job <1074890> is submitted to default queue <c7normal>.
+
+for pop in ecaprivi etosha hluhluwe kidepo kruger lakipo luang mahango mburo; do
+awk '!/#/ {print}' RAD/vcfs/all_sites/$pop.flt2.recode.vcf | wc -l
+done
+
+for pop in ecaprivi etosha hluhluwe kidepo kruger lakipo luang mahango mburo; do
+awk '/#CHROM/ {print NF-9}' RAD/vcfs/all_sites/$pop.flt2.recode.vcf 
+done
+
+for pop in ecaprivi etosha hluhluwe kidepo kruger lakipo luang mahango mburo; do
+vcftools --vcf RAD/vcfs/all_sites/$pop.flt2.recode.vcf --out RAD/vcfs/all_sites/$pop.flt2 --freq
+done
+
+## few sites - biallelic apparently means two DIFFERENT alleles ...
+## only two hluhluwe - maybe 90% too stringent - try to keep three?
+## missingness > 20% would have to be allowed:  PZ0065  17556224        0       3688280 0.210084
+## so stick with just 2 for now
+
+#RERUN LAST VCFTOOLS CALL WITHOUT MIN-ALLELES
+Job <1074896> is submitted to default queue <c7normal>.
+
+for pop in ecaprivi etosha hluhluwe kidepo kruger lakipo luang mahango mburo; do
+awk '!/#/ {print}' RAD/vcfs/all_sites/$pop.flt2.recode.vcf | wc -l
+done
+
+for pop in ecaprivi etosha hluhluwe kidepo kruger lakipo luang mahango mburo; do
+awk '/#CHROM/ {print NF-9}' RAD/vcfs/all_sites/$pop.flt2.recode.vcf 
+done
+
+15350132
+12154954
+14791188
+16124761
+13835714
+16023123
+13849143
+14677822
+16174721
+[blarison@login01 ~]$ 
+[blarison@login01 ~]$ for pop in ecaprivi etosha hluhluwe kidepo kruger lakipo luang mahango mburo; do
+> awk '/#CHROM/ {print NF-9}' RAD/vcfs/all_sites/$pop.flt2.recode.vcf 
+> done
+4
+24
+2
+10
+20
+15
+12
+13
+16
+
+#################################################################################################### 
+STEP 4  -  Heterozygosity and heterozygosity ratio
+
+#Make 012 files 
+
+#use submit.sh to submit tmp.sh to run scripts/VCFto012.py #turns all genotypes into 0,1,2 at each locus for each sample
+#command in tmp.sh: VCFto012.py RAD/vcfs/all_sites/$pop.flt2.recode RAD/heterozygosity/$pop 9
+ 
+
+Job <1075914> is submitted to default queue <c7normal>.
+ 
+for pop in ecaprivi etosha hluhluwe kidepo kruger lakipo luang mahango mburo; do
+	wc -l RAD/heterozygosity/$pop.012.txt	
+done
+for pop in ecaprivi etosha hluhluwe kidepo kruger lakipo luang mahango mburo; do
+wc -l RAD//heterozygosity/$pop.012.indv.txt
+done
+
+15350132 RAD/heterozygosity/ecaprivi.012.txt
+12154954 RAD/heterozygosity/etosha.012.txt
+14791188 RAD/heterozygosity/hluhluwe.012.txt
+16124761 RAD/heterozygosity/kidepo.012.txt
+13835714 RAD/heterozygosity/kruger.012.txt
+16023123 RAD/heterozygosity/lakipo.012.txt
+13849143 RAD/heterozygosity/luang.012.txt
+14677822 RAD/heterozygosity/mahango.012.txt
+16174721 RAD/heterozygosity/mburo.012.txt
+
+4 RAD//heterozygosity/ecaprivi.012.indv.txt
+24 RAD//heterozygosity/etosha.012.indv.txt
+2 RAD//heterozygosity/hluhluwe.012.indv.txt
+10 RAD//heterozygosity/kidepo.012.indv.txt
+20 RAD//heterozygosity/kruger.012.indv.txt
+15 RAD//heterozygosity/lakipo.012.indv.txt
+12 RAD//heterozygosity/luang.012.indv.txt
+13 RAD//heterozygosity/mahango.012.indv.txt
+16 RAD//heterozygosity/mburo.012.indv.txt
+#COUNT REF, HET, ALT FOR EACH INDIVIDUAL
+
+
+#IN R - using script count.genos.from.012.R
+#CALCULATE heterozygosity for each individual - (#heterozygotes_sites 1/0) ÷ ( #homozygous_alternative 1/1 + #heterozygotes 1/0 + homozygous reference 0/0)
+#CALCULATE heterozygosity ratio for each individual - (#heterozygotes_sites 1/0) ÷ (homozygous reference 0/0) 
+
+#Sum heterozygosities for each population
+
+cd /Volumes/NGSAnalysis/RAD/Heterozygosity_Pi
+
+for pop in ecaprivi etosha hluhluwe kidepo kruger lakipo luang mahango mburo; do
+	echo $pop >> mean.heterozygosities.txt
+	awk '!/id/ {sum=sum+$5} {count+=1} END {print sum/count}' $pop.heterozygosities.txt >> mean.heterozygosities.txt # sum a  column of data
+done
+
+hets <- read.table('/Volumes/NGSAnalysis/RAD/Heterozygosity_Pi/ecaprivi.heterozygosities.txt', sep='\t', header=T)
+mean(hets$heterozygosity)
+mean(hets$het.ratio)
+
+[1] 0.00241024
+[1] 0.00244377
+
+
+hets <- read.table('/Volumes/NGSAnalysis/RAD/Heterozygosity_Pi/etosha.heterozygosities.txt', sep='\t', header=T)
+mean(hets$heterozygosity)
+mean(hets$het.ratio)
+
+
+[1] 0.002392971
+[1] 0.002427129
+
+
+hets <- read.table('/Volumes/NGSAnalysis/RAD/Heterozygosity_Pi/hluhluwe.heterozygosities.txt', sep='\t', header=T)
+mean(hets$heterozygosity)
+mean(hets$het.ratio)
+
+[1] 0.002068529
+[1] 0.002096622
+
+
+hets <- read.table('/Volumes/NGSAnalysis/RAD/Heterozygosity_Pi/kidepo.heterozygosities.txt', sep='\t', header=T)
+mean(hets$heterozygosity)
+mean(hets$het.ratio)
+
+[1] 0.001807469
+[1] 0.001832126
+
+
+hets <- read.table('/Volumes/NGSAnalysis/RAD/Heterozygosity_Pi/kruger.heterozygosities.txt', sep='\t', header=T)
+mean(hets$heterozygosity)
+mean(hets$het.ratio)
+
+[1] 0.002423991
+[1] 0.002457612
+
+
+hets <- read.table('/Volumes/NGSAnalysis/RAD/Heterozygosity_Pi/lakipo.heterozygosities.txt', sep='\t', header=T)
+mean(hets$heterozygosity)
+mean(hets$het.ratio)
+
+[1] 0.002330777
+[1] 0.002363406
+
+
+hets <- read.table('/Volumes/NGSAnalysis/RAD/Heterozygosity_Pi/luang.heterozygosities.txt', sep='\t', header=T)
+mean(hets$heterozygosity)
+mean(hets$het.ratio)
+
+[1] 0.002447757
+[1] 0.002482612
+
+
+hets <- read.table('/Volumes/NGSAnalysis/RAD/Heterozygosity_Pi/mahango.heterozygosities.txt', sep='\t', header=T)
+mean(hets$heterozygosity)
+mean(hets$het.ratio)
+
+[1] 0.002601397
+[1] 0.00263771
+
+
+hets <- read.table('/Volumes/NGSAnalysis/RAD/Heterozygosity_Pi/mburo.heterozygosities.txt', sep='\t', header=T)
+mean(hets$heterozygosity)
+mean(hets$het.ratio)
+
+[1] 0.001929245
+[1] 0.001956274
+
+
+#Overall mean heterozygosity
+
+cat /Volumes/NGSAnalysis/RAD/Heterozygosity_Pi/*heterozygosities.txt | grep -v id > /Volumes/NGSAnalysis/RAD/Heterozygosity_Pi/all.heterozygosities.txt
+hets <- read.table('/Volumes/NGSAnalysis/RAD/Heterozygosity_Pi/all.heterozygosities.txt', sep='\t', header=T)
+[1] 0.002299868
+[1] 0.002332121
+
+
+############### MEDIANS ####################
+############### MEDIANS ####################
+############### MEDIANS ####################
+
+#concat files with loc names
+echo -e "location\tid\tsumref\tsumhet\tsumalt\theterozygosity\thet.ratio" >| /Volumes/NGSAnalysis/RAD/Heterozygosity_Pi/all.heterozygosities.locs.txt
+for pop in ecaprivi etosha hluhluwe kidepo kruger lakipo luang mahango mburo; do
+	awk -v loc=$pop '!/id/ {print loc"\t"$0}' /Volumes/NGSAnalysis/RAD/Heterozygosity_Pi/$pop.heterozygosities.txt >> /Volumes/NGSAnalysis/RAD/Heterozygosity_Pi/all.heterozygosities.locs.txt
+done
+
+R
+
+het <- read.table("/Volumes/NGSAnalysis/RAD/Heterozygosity_Pi/all.heterozygosities.locs.txt", sep='\t', header=T)
+
+meds <- aggregate(heterozygosity ~ location, data=het, FUN=median)
+
+
+#  location heterozygosity
+#1 ecaprivi    0.002511640
+#2   etosha    0.002403012
+#3 hluhluwe    0.002068529
+#4   kidepo    0.001824554
+#5   kruger    0.002418596
+#6   lakipo    0.002345548
+#7    luang    0.002481923
+#8  mahango    0.002627297
+#9    mburo    0.001940466
+
+
+############## PLOT and Test Census Size and Median He ##############
+
+ne <- read.csv('Medians/ZebraPopSizeDiversityROH_MEDIANS.csv', header=T)
+het <- read.table("/Volumes/NGSAnalysis/RAD/Heterozygosity_Pi/all.heterozygosities.locs.txt", sep='\t', header=T)
+he.ne <- merge(het, ne, by.x='location', by.y='Populations', all.x=T)
+
+library(mblm)
+
+model.cen = mblm(heterozygosity ~ CensusSize, data=he.ne)
+summary(model.cen)
+
+Call:
+mblm(formula = heterozygosity ~ CensusSize, dataframe = he.ne)
+
+Residuals:
+       Min         1Q     Median         3Q        Max 
+-6.564e-04 -2.263e-04  8.560e-06  9.293e-05  3.545e-04 
+
+Coefficients:
+             Estimate       MAD V value Pr(>|V|)    
+(Intercept) 2.352e-03 2.049e-04    6786   <2e-16 ***
+CensusSize  1.163e-09 6.975e-09    4578   0.0011 ** 
+---
+Signif. codes:  0 ‘***’ 0.001 ‘**’ 0.01 ‘*’ 0.05 ‘.’ 0.1 ‘ ’ 1
+
+
+###PLOT
+
+basename="/Volumes/NGSAnalysis/RAD/Heterozygosity_Pi/"
+"
+library(doBy)
+median.sd <- summaryBy(heterozygosity ~ location + CensusSize, data=he.ne, FUN=c(length,median,sd))
+
+gph.he.cens=paste(basename,"Heterozygosity_CensusSize_Medians.color.eps", sep='')
+postscript(gph.he.cens)
+par(oma=c(0,0,0,0), mar=c(5,5,1,1))
+with(median.sd, plot(heterozygosity.median ~ CensusSize, pch=21, bg=location, col='black', cex=2.5, ylim=c(min(heterozygosity.median-heterozygosity.sd), max(heterozygosity.median+heterozygosity.sd)), las=1, ylab='Heterozygosity', xlab='Census Size', cex.lab=2, cex.axis=1.5))
+with(median.sd, arrows(CensusSize, heterozygosity.median+heterozygosity.sd, CensusSize, heterozygosity.median-heterozygosity.sd, angle=90, code=0)) 
+par(new=T)
+with(median.sd, plot(heterozygosity.median ~ CensusSize, pch=21, bg=location, col='black', cex=2.5, ylim=c(min(heterozygosity.median-heterozygosity.sd), max(heterozygosity.median+heterozygosity.sd)), las=1, ylab='Heterozygosity', xlab='CensusSize', cex.lab=2, cex.axis=1.5))
+abline(model.cen, lty='dashed')
+dev.off()
+
+
+
+
+
+
+

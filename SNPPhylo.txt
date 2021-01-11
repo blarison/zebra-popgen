@@ -1,0 +1,1 @@
+Programs/SNPhylo/snphylo.sh -v /Volumes/NGSAnalysis/RAD/VCFs/wild.auto.pw.rm.po.2fs.recode.vcf -Abr  -B 107 -a 31
